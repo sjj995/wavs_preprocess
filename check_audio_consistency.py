@@ -86,6 +86,14 @@ def get_args():
         help="convert channel to mono(Default: false)",
     )
 
+    parser.add_argument(
+        "-cp",
+        "--config_path",
+        type=str,
+        default=os.getcwd()+'/invalid_data',
+        help="invalid information path(Default: os.getcwd()+'/invalid_data')",
+    )
+
 
 
     return parser.parse_args()
@@ -107,7 +115,7 @@ class CheckAudio:
     invalid_channels = {}
     invalid_duration = {}
 
-    def __init__(self,sr,channels,min_d,max_d,convert_sr_flag,convert_c_flag,remove_flag,*wavs):
+    def __init__(self,sr,channels,min_d,max_d,convert_sr_flag,convert_c_flag,remove_flag,config_file,*wavs):
         self.sr = sr
         self.channels = channels
         self.min_d = min_d
@@ -116,6 +124,7 @@ class CheckAudio:
         self.sr_flag = convert_sr_flag
         self.c_flag = convert_c_flag
         self.remove_flag = remove_flag
+        self.config_file = config_file
 
     def audio_info(self,wav):
         metadata = audio_metadata.load(wav)
@@ -147,6 +156,8 @@ class CheckAudio:
         return
 
     def write_result(self,path):
+        if not os.path.exists(path):
+            os.makedirs(path)
         
         if len(CheckAudio.invalid_rate) != 0:
             #output = path+'/'+'invalid_rate'+'.txt'
@@ -197,6 +208,16 @@ class CheckAudio:
             else:
                 user_ans = input('rewrite your answer (y or n) ')
 
+    
+    def use_config_file(self,config_name):
+        json_file = self.config_file+'/'+config_name+'.json'
+        if os.path.isfile(json_file):
+            with open(json_file,'r',encoding='utf-8') as f:
+                json_data = json.load(f)
+            return json_data
+        else:
+            return
+
     def flag_check(self):
 
         if self.sr_flag == True:
@@ -219,13 +240,18 @@ class CheckAudio:
         return
 
     def check_routine(self):
-        for wav in self.wav_list:
-            meta = self.audio_info(wav)
-            self.check_sample_rate(self.sr,meta)
-            self.check_channel(self.channels,meta)
-            self.check_duration(self.min_d,self.max_d,meta)
+        if os.path.exists(self.config_file):
+            CheckAudio.invalid_rate = self.use_config_file('invalid_rate')
+            CheckAudio.invalid_channels = self.use_config_file('invalid_channels')
+            CheckAudio.invalid_duration = self.use_config_file('invalid_duration')
+        else:
+            for wav in tqdm(self.wav_list):
+                meta = self.audio_info(wav)
+                self.check_sample_rate(self.sr,meta)
+                self.check_channel(self.channels,meta)
+                self.check_duration(self.min_d,self.max_d,meta)
+            self.write_result(self.config_file)
         
-        self.write_result(os.getcwd())
         self.flag_check()            
             
         return
@@ -243,13 +269,14 @@ def main():
     convert_sr_flag = args.convert_sample_rate
     convert_c_flag = args.convert_channels
     remove_flag = args.remove_failed_wav
+    config_file = args.config_path
 
     if args.input_wav_path is None :
         f = sys.stdin
     else :
         assert os.path.exists(args.input_wav_path)
         wavs = get_wav_files(args.input_wav_path)
-        preprocess_audio = CheckAudio(sr,channels,min_d,max_d,convert_sr_flag,convert_c_flag,remove_flag,*wavs)
+        preprocess_audio = CheckAudio(sr,channels,min_d,max_d,convert_sr_flag,convert_c_flag,remove_flag,config_file,*wavs)
         preprocess_audio.check_routine()
 
 

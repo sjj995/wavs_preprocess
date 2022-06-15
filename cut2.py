@@ -86,8 +86,6 @@ class TrimAudio:
 
     def trim_audio_data(self,sr,input_path,save_path):
 
-        previous_file = '' 
-        working_file = ''
         for k,v in tqdm(TrimAudio.wav_piece.items()):
 
             path = save_path+'/'+'_'.join(k.split('_')[:-2])
@@ -95,25 +93,19 @@ class TrimAudio:
                 os.makedirs(path)
             
             wav_by_key = '_'.join(k.split('_')[:-2])+'_22k.wav'
-            working_file = wav_by_key
-            if working_file != previous_file:
-                print(f'{working_file} trimming start')
             if wav_by_key in self.wav_list:
-                previous_file = working_file
-                if os.path.isfile(path+'/'+k+'.wav'): 
-                    continue
                 audio_file = input_path+'/'+wav_by_key
                 y, sr = librosa.load(audio_file, sr=sr)
                 start_sec = float(v[0])-1 # 0초 이전이 포함될 경우 저장 X
                 if start_sec < 0:
                     start_sec += 1
                 end_sec = float(v[1])+1
+        
                 ny = y[math.floor(sr*start_sec):math.ceil(sr*end_sec)]
-
+                if os.path.isfile(path+'/'+k+'.wav'): 
+                    continue
                 librosa.output.write_wav(path+'/'+k+'.wav', ny, sr)
-                
-
-
+            
 
     def exec_trimming(self):
         self.get_duration(self.vad)
@@ -129,6 +121,7 @@ def main():
     else :
         assert os.path.exists(args.input_wav_path)
         wavs = get_wav_list(args.config)
+        print(wavs)
         trim_audio = TrimAudio(22050,args.input_wav_path,args.output_wav_path,args.vad_info,*wavs) 
         trim_audio.exec_trimming()
 

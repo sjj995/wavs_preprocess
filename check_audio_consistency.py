@@ -11,6 +11,7 @@ import json
 from tqdm import tqdm
 from tqdm import trange
 
+# 항상 invalid_data 폴더 지우고 시작할 것, 아니면 config 입력 받기
 def get_args():
     parser = argparse.ArgumentParser()
 
@@ -55,6 +56,14 @@ def get_args():
     )
 
     parser.add_argument(
+        "-b",
+        "--bit_rate",
+        type=int,
+        default=16,
+        help="bit rate (Default: 16)",
+    )
+
+    parser.add_argument(
         "-r",
         "--remove_failed_wav",
         type=boolean,
@@ -87,6 +96,14 @@ def get_args():
     )
 
     parser.add_argument(
+        "-cb",
+        "--convert_bit_rate",
+        type=boolean,
+        default=False,
+        help="convert_bit rate (Default: false)",
+    )
+    
+    parser.add_argument(
         "-cp",
         "--config_path",
         type=str,
@@ -94,7 +111,7 @@ def get_args():
         help="invalid information path(Default: os.getcwd()+'/invalid_data')",
     )
 
-
+    
 
     return parser.parse_args()
 
@@ -110,12 +127,13 @@ def get_wav_files(root_path):
     return wav_list
 
 class CheckAudio:
-    invalid_info = ['invalid_rate','invalid_channels','invalid_duration']
+    invalid_info = ['invalid_rate','invalid_channels','invalid_duration','invalid_bit_rate']
     invalid_rate = {}
     invalid_channels = {}
     invalid_duration = {}
+    invalid_bit_rate = {}
 
-    def __init__(self,sr,channels,min_d,max_d,convert_sr_flag,convert_c_flag,remove_flag,config_file,*wavs):
+    def __init__(self,sr,channels,min_d,max_d,bit,convert_sr_flag,convert_c_flag,remove_flag,b_flag,config_file,*wavs):
         self.sr = sr
         self.channels = channels
         self.min_d = min_d
@@ -125,6 +143,8 @@ class CheckAudio:
         self.c_flag = convert_c_flag
         self.remove_flag = remove_flag
         self.config_file = config_file
+        self.bit_rate = bit
+        self.b_flag = b_flag
 
     def audio_info(self,wav):
         metadata = audio_metadata.load(wav)
@@ -154,6 +174,12 @@ class CheckAudio:
             pass
             #print("duration check complete")
         return
+    
+    def check_bit_rate(self,bit_rate,metadata):
+        if bit_rate != metadata['streaminfo']['bit_depth']:
+            CheckAudio.invalid_bit_rate[metadata['filepath']] = metadata['streaminfo']['bit_depth']
+
+        return
 
     def write_result(self,path):
         if not os.path.exists(path):
@@ -174,12 +200,34 @@ class CheckAudio:
             output = path+'/'+'invalid_duration'+'.json'   
             json.dump(CheckAudio.invalid_duration,open(output,'w',encoding='utf-8'))
         
+        if len(CheckAudio.invalid_bit_rate) != 0:
+            #output = path+'/'+'invalid_bit_rate'+'.txt'
+            output = path+'/'+'invalid_bit_rate'+'.json'   
+            json.dump(CheckAudio.invalid_bit_rate,open(output,'w',encoding='utf-8'))
+
+        return
+
+    def resampling_encoding(self,bit_rate,metadata):
+        input_wav = metadata['filepath']
+        y,sr = sf.read(input_wav)
+      
+        if bit_rate == 16:
+            encoding = 'PCM_16'
+    
+        elif bit_rate == 24:
+            encoding = 'PCM_24'
+    
+        elif bit_rate == 8:
+            encoding = 'PCM_S8'
+        # https://pysoundfile.readthedocs.io/en/latest/#soundfile.default_subtype        
+        sf.write(input_wav,y,sr,subtype=encoding)
         return
 
     def resampling_rate(self,resample_sr,metadata):
         input_wav = metadata['filepath']
         origin_sr = metadata['streaminfo']['sample_rate']
-        y,sr = librosa.load(input_wav,sr=origin_sr)
+        #y,sr = librosa.load(input_wav,sr=origin_sr)
+        y,sr = sf.read(input_wav)
         resample_data = librosa.resample(y,sr,resample_sr)
         sf.write(input_wav,resample_data,resample_sr,subtype='PCM_16')
         #print(f"{input_wav.split('/')[-1]} 파일 {origin_sr} hz -> {resample_sr} hz 샘플링 레이트 변환 완료")
@@ -189,7 +237,8 @@ class CheckAudio:
         input_wav = metadata['filepath']
         sample_rate = metadata['streaminfo']['sample_rate']
         origin_ch = metadata['streaminfo']['channels']
-        y,sr = librosa.load(input_wav,sr=sample_rate)
+        #y,sr = librosa.load(input_wav,sr=sample_rate)
+        y,sr = sf.read(input_wav)
         y_mono = librosa.to_mono(y)
         #sf.write('convert_channel.wav',y_mono,sr,subtype='PCM_16')
         sf.write(input_wav,y_mono,sr,subtype='PCM_16')
@@ -233,6 +282,13 @@ class CheckAudio:
                 metadata = audio_metadata.load(key)
                 self.convert_channel_to_mono(metadata)
             print("channels 변환 완료")
+        
+        if self.b_flag == True:
+            print(f'bit rate 변환 시작')
+            for key in tqdm(CheckAudio.invalid_bit_rate):
+                metadata = audio_metadata.load(key)
+                self.resampling_encoding(self.bit_rate,metadata)
+            print(f'bit rate 변환 완료')
 
         if self.remove_flag == True:
             self.remove_unsatisfied_duration_wavs()
@@ -244,12 +300,14 @@ class CheckAudio:
             CheckAudio.invalid_rate = self.use_config_file('invalid_rate')
             CheckAudio.invalid_channels = self.use_config_file('invalid_channels')
             CheckAudio.invalid_duration = self.use_config_file('invalid_duration')
+            CheckAudio.invalid_bit_rate = self.use_config_file('invalid_bit_rate')
         else:
             for wav in tqdm(self.wav_list):
                 meta = self.audio_info(wav)
                 self.check_sample_rate(self.sr,meta)
                 self.check_channel(self.channels,meta)
                 self.check_duration(self.min_d,self.max_d,meta)
+                self.check_bit_rate(self.bit_rate,meta)
             self.write_result(self.config_file)
         
         self.flag_check()            
@@ -266,17 +324,20 @@ def main():
     channels = args.channels
     min_d = args.min_duration
     max_d = args.max_duration
+    bit = args.bit_rate
     convert_sr_flag = args.convert_sample_rate
     convert_c_flag = args.convert_channels
     remove_flag = args.remove_failed_wav
+    convert_b_flag = args.convert_bit_rate
     config_file = args.config_path
+    
 
     if args.input_wav_path is None :
         f = sys.stdin
     else :
         assert os.path.exists(args.input_wav_path)
         wavs = get_wav_files(args.input_wav_path)
-        preprocess_audio = CheckAudio(sr,channels,min_d,max_d,convert_sr_flag,convert_c_flag,remove_flag,config_file,*wavs)
+        preprocess_audio = CheckAudio(sr,channels,min_d,max_d,bit,convert_sr_flag,convert_c_flag,remove_flag,convert_b_flag,config_file,*wavs)
         preprocess_audio.check_routine()
 
 

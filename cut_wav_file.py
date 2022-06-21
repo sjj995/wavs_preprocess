@@ -19,7 +19,7 @@ def get_args():
         "-c",
         "--config",
         type=str,
-        default='/datadrive/vocoder/voxseg/mbc_radio_16k/wav.scp',
+        default='/datadrive/vocoder/voxseg/youtube_16k_2/wav.scp',
         help="config(wav.scp) path(Default: /datadrive/vocoder/voxseg/mbc_radio_16k/wav.scp)",
     )
     
@@ -27,7 +27,7 @@ def get_args():
         "-i",
         "--input_wav_path",
         type=str,
-        default='/datadrive/vocoder/mbc_radio_22k_origin',
+        default='/datadrive/vocoder/22k/youtube_22k_2',
         help="Input wav file path(Default: stdin)",
     )
     
@@ -35,7 +35,7 @@ def get_args():
         "-vad",
         "--vad_info",
         type=str,
-        default='/datadrive/vocoder/voxseg/mbc_radio_16k/segments',
+        default='/datadrive/vocoder/voxseg/youtube_16k_2/segments',
         help="vad information path(Default: /datadrive/vocoder/voxseg/mbc_radio_16k/segments)",
     )
 
@@ -58,7 +58,8 @@ def get_wav_list(config):
 
     for info in information:
         wav_name = info.split(' ')[0]
-        wav_file = wav_name+'_22k.wav'
+        #wav_file = wav_name+'_22k.wav'
+        wav_file = wav_name+'.wav'
         wav_list.append(wav_file)
     
     return wav_list
@@ -94,7 +95,8 @@ class TrimAudio:
             if not os.path.exists(path):
                 os.makedirs(path)
             
-            wav_by_key = '_'.join(k.split('_')[:-2])+'_22k.wav'
+            #wav_by_key = '_'.join(k.split('_')[:-2])+'_22k.wav'
+            wav_by_key = '_'.join(k.split('_')[:-2])+'.wav'
             working_file = wav_by_key
             if working_file != previous_file:
                 print(f'{working_file} trimming start')

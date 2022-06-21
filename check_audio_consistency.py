@@ -210,6 +210,7 @@ class CheckAudio:
     def resampling_encoding(self,bit_rate,metadata):
         input_wav = metadata['filepath']
         y,sr = sf.read(input_wav)
+        #y = y.T
       
         if bit_rate == 16:
             encoding = 'PCM_16'
@@ -219,17 +220,21 @@ class CheckAudio:
     
         elif bit_rate == 8:
             encoding = 'PCM_S8'
-        # https://pysoundfile.readthedocs.io/en/latest/#soundfile.default_subtype        
+        # https://pysoundfile.readthedocs.io/en/latest/#soundfile.default_subtype
+        # print(f'인코딩 {encoding}')        
         sf.write(input_wav,y,sr,subtype=encoding)
         return
 
     def resampling_rate(self,resample_sr,metadata):
         input_wav = metadata['filepath']
         origin_sr = metadata['streaminfo']['sample_rate']
-        #y,sr = librosa.load(input_wav,sr=origin_sr)
-        y,sr = sf.read(input_wav)
-        resample_data = librosa.resample(y,sr,resample_sr)
-        sf.write(input_wav,resample_data,resample_sr,subtype='PCM_16')
+        #y,sr = sf.read(input_wav)# X, resample이 안 됨
+        y,sr = librosa.load(input_wav) # default : 22050 
+        if resample_sr != 22050:
+            resample_data = librosa.resample(y,orig_sr=sr,target_sr=resample_sr)
+            sf.write(input_wav,resample_data,resample_sr,subtype='PCM_16')
+        else:
+            sf.write(input_wav,y,resample_sr,subtype='PCM_16')
         #print(f"{input_wav.split('/')[-1]} 파일 {origin_sr} hz -> {resample_sr} hz 샘플링 레이트 변환 완료")
         return
 
@@ -238,7 +243,8 @@ class CheckAudio:
         sample_rate = metadata['streaminfo']['sample_rate']
         origin_ch = metadata['streaminfo']['channels']
         #y,sr = librosa.load(input_wav,sr=sample_rate)
-        y,sr = sf.read(input_wav)
+        #y,sr = sf.read(input_wav)
+        y,sr = librosa.load(input_wav)
         y_mono = librosa.to_mono(y)
         #sf.write('convert_channel.wav',y_mono,sr,subtype='PCM_16')
         sf.write(input_wav,y_mono,sr,subtype='PCM_16')
@@ -269,6 +275,13 @@ class CheckAudio:
 
     def flag_check(self):
 
+        if self.b_flag == True:
+            print(f'bit rate 변환 시작')
+            for key in tqdm(CheckAudio.invalid_bit_rate):
+                metadata = audio_metadata.load(key)
+                self.resampling_encoding(self.bit_rate,metadata)
+            print(f'bit rate 변환 완료')
+
         if self.sr_flag == True:
             print(f'{self.sr} hz sample rate 변환 시작')
             for key in tqdm(CheckAudio.invalid_rate):
@@ -282,13 +295,6 @@ class CheckAudio:
                 metadata = audio_metadata.load(key)
                 self.convert_channel_to_mono(metadata)
             print("channels 변환 완료")
-        
-        if self.b_flag == True:
-            print(f'bit rate 변환 시작')
-            for key in tqdm(CheckAudio.invalid_bit_rate):
-                metadata = audio_metadata.load(key)
-                self.resampling_encoding(self.bit_rate,metadata)
-            print(f'bit rate 변환 완료')
 
         if self.remove_flag == True:
             self.remove_unsatisfied_duration_wavs()
